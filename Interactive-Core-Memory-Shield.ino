@@ -1248,12 +1248,16 @@ unsigned int CharacterColumn = 0;
   if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
   {
     ScrollUpdateLastRunTime = nowTime;
-// Shift Screen Content Left
-
+// Shift All Screen Content Left One Column
+    for (uint8_t x=6; x=0; x--)
+    {
+      // Read Screen Column x
+      // Write Screen Column x+1
+    }
 // Move in new character column by column
-
-// Out of characters?
   }
+// Out of characters?
+
 }
 
 unsigned long Button1State(unsigned long clear_duration) // send a 1 or more to clear, 0 to use normally)
