@@ -6,7 +6,7 @@ TROUBLESHOOT:
 Sometimes snake head seems to be stuck with nowhere to go even though there are open spaces and stylus is detected there.
 System seems unstable (connection) and the first core ends up setting itself.
 Noticed the timing between the 29th and 30th bits wiggles (with #define ISOLATE_ONE_CORE enabled) when testing active stylus
-
+2nd and 3rd row from the bottom start to fill in and end up setting all the LEDs on after a few seconds, sometimes. Seems like a loose conenction.
 
 TO DO:
 Crashing into the existing snake body should result in game over.
@@ -40,8 +40,8 @@ Duration of stylus over a core increase intensity of chosen color.
   (yellow under board, 2nd from capacitor)  3.3V taps from Arduino to Core Shield Board 
   (red, 3rd from capacitor) 5V to Featherwing (3rd pin from the left, on top row)
   (black, 4th from capacitor) GND to Featherwing (4th pin from the left, bottom row)
-  5th No Connection
-  6th No Connection
+  5th No Connection - GND
+  6th No Connection - VIN
   
   (blue, 7th from capacitor) D14 (A0) to Featherwing Digital Input DIN on left edge
   8th No Connection
@@ -111,7 +111,7 @@ Duration of stylus over a core increase intensity of chosen color.
 #include <Adafruit_NeoPixel.h>
 #define PIN 14 // A0 or D14 are the same thing, different use modes
 #define NUM_LEDS 32
-#define BRIGHTNESS 10
+#define BRIGHTNESS 15
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800);
 
 
@@ -130,6 +130,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800)
 FastDigitalPin StylusPin(STYLUS_PIN);
 #define CLEAR_BUTTON_INPUT_PIN 12
 #define DEBUG_SNAKE_IN_TOP_LEVEL_STATE_MACHINE
+#include "CharacterMap.h"
 
 #ifdef ANDY_OUTPUT_CONSTANT_DATA_STREAM
 static unsigned int constant_data_stream_mode_enabled  = true;
@@ -158,13 +159,15 @@ static char trace_core_calls_p = 0;
 
 const unsigned long NeopixelUpdatePeriod = 25 ; // ms (also reads the cores)
 const unsigned long SerialPacketUpdatePeriod = 50 ; // ms
-const unsigned long CoreChangeDetectUpdatePeriod = 75 ; // ms (effectively debounces the stylus movement)
+const unsigned long CoreChangeDetectUpdatePeriod = 30 ; // ms (effectively debounces the stylus movement)
 const unsigned long GestureTimeout = 3000 ; // ms
-const unsigned long SnakeGameUpdatePeriod = 75 ; // ms
+const unsigned long SnakeGameUpdatePeriod = 30 ; // ms
+const unsigned long ScrollUpdatePeriod = 300; // ms
 volatile unsigned long NeopixelUpdateLastRunTime;
 volatile unsigned long SerialPacketUpdateLastRunTime;
 volatile unsigned long CoreChangeDetectUpdateLastRunTime;
 volatile unsigned long SnakeGameUpdateLastRunTime;
+volatile unsigned long ScrollUpdateLastRunTime;
 volatile unsigned long nowTime;
 volatile unsigned long StartReadTime;
 volatile unsigned long EndReadTime;
@@ -173,7 +176,7 @@ volatile unsigned long StartLoopTime;
 volatile unsigned long EndLoopTime;
 volatile unsigned long LoopTime;
 volatile unsigned long GameOverTime;
-volatile unsigned long GameOverTimeAutoReset = 2500 ; // ms restart the game automaticaly
+volatile unsigned long GameOverTimeAutoReset = 2250 ; // ms restart the game automaticaly
 volatile int pixel_number = 0;
 volatile bool ClearCores = 0;
 volatile unsigned int TopLevelStateMachine = 0;                    // start with game for testing
@@ -1010,7 +1013,7 @@ void CheckForSerialCommand() {
 
 void ReadCoresUpdateDisplay() {
     // Read 32 bits and write to NeoPixel
-  uint32_t light = strip.Color(0, 0, 64);
+  uint32_t light = strip.Color(0, 0,150);
   uint32_t no_light = strip.Color(0, 0, 0);
   uint32_t color = 0; 
   if ((nowTime - NeopixelUpdateLastRunTime) >= NeopixelUpdatePeriod)
@@ -1047,9 +1050,10 @@ void ReadCoresUpdateDisplay() {
 
 void UpdateDisplayFromScreenArray() {
     // Read 32 bits and write to NeoPixel
-  uint32_t red_light = strip.Color(64, 0, 0);
-  uint32_t blue_light = strip.Color(0, 64, 0);
-  uint32_t green_light = strip.Color(0, 0, 64);
+  uint32_t red_light = strip.Color(150, 0, 0);
+  uint32_t blue_light = strip.Color(0,150, 0);
+  uint32_t green_light = strip.Color(0, 0,150);
+  uint32_t yellow_light = strip.Color(255,215,0); // Dark Orange
   uint32_t no_light = strip.Color(0, 0, 0);
   uint32_t color = 0;
   int SinglePixel = 0;
@@ -1067,7 +1071,8 @@ void UpdateDisplayFromScreenArray() {
         green_light = strip.Color(0, 0, brightness_position[( (strip.numPixels()-1) -i)]);
         SinglePixel = screen_memory[y][x];
         if (SinglePixel == 0) { color = no_light; }
-        if (SinglePixel > 0) { color = green_light; } 
+        if (SinglePixel > 1) { color = green_light; } 
+        if (SinglePixel ==1) { color = yellow_light; } 
         if (SinglePixel == -1) { color = red_light; } 
         if (SinglePixel == -2) { color = blue_light; } 
         strip.setPixelColor(( (strip.numPixels()-1) -i), color );
@@ -1234,13 +1239,21 @@ void GetPhysicalCoreState() {
 }
 
 void ScrollCoreMemory() {
-//  unsigned long c =
-//  (0b10001111 *256*256*256)+ // why doesn't this row show up?
-//  (0b00001000 *256*256)+     // why doesn't this row show up?
-//  (0b00001000 *256)+
-//  (0b00001111 );
-//  //unsigned long c = (B11001100 * 256) + B10101010;
-//  write_physical_word(~c); // ~ inverts to make the 1's be LED's ON
+unsigned int ScreenReadCol = 0;
+unsigned int ScreenWriteCol = 0;
+unsigned int StringPosition = 0;
+unsigned int CharacterColumn = 0;
+
+// Is it time to scroll again?
+  if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
+  {
+    ScrollUpdateLastRunTime = nowTime;
+// Shift Screen Content Left
+
+// Move in new character column by column
+
+// Out of characters?
+  }
 }
 
 unsigned long Button1State(unsigned long clear_duration) // send a 1 or more to clear, 0 to use normally)
@@ -1306,7 +1319,7 @@ void RandomStartMap()
   {
     for (uint8_t y=0; y<=3; y++)
     {
-      int RandomPixel = random(0, 7); // wider range than need to get some extra blank space
+      int RandomPixel = random(0, 6); // wider range than need to get some extra blank space
       if (RandomPixel == 1) { RandomPixel = RandomPixel * (-1); }
       if (RandomPixel == 2) { RandomPixel = RandomPixel * (-1); }
       if (RandomPixel > 2) { RandomPixel = 0; }
