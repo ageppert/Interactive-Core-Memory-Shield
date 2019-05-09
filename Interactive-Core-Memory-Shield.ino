@@ -1255,6 +1255,8 @@ unsigned int CharacterColumn = 0;
       // Write Screen Column x+1
     }
 // Move in new character column by column
+  // Read Character Column
+  // Write Screen Column
   }
 // Out of characters?
 
