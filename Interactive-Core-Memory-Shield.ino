@@ -124,7 +124,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800)
 //#define START_WITH_ALL_BITS_SET
 //#define ISOLATE_ONE_CORE
   #define ISOLATE_CORE_BIT 31
-#define STYLUS_ENABLE
+//#define STYLUS_ENABLE
 #define STYLUS_PIN 19 // Will use FastDigitalPin library 
 #include <FastDigitalPin.h> // Arduino Library Manager provides this from https://github.com/hippymulehead/FastDigitalPin
 FastDigitalPin StylusPin(STYLUS_PIN);
@@ -215,6 +215,18 @@ const int brightness_position[32] = { // 4 rows of bytes with 8 columns of bits
     190,180, 90, 80, 80, 90,180,190      // Correct ! <- This corner nearest sense wire solder pads. This is LED #31.
   };
 
+const int Physical_Position_Word_Array[32] = {   // 4 rows of bytes with 8 columns of bits
+    25,26,29,30,24,27,28,31,
+    16,19,20,23,17,18,21,22,
+     9,10,13,14, 8,11,12,15,
+     0, 3, 4, 7, 1, 2, 5, 6         };  // Correct ! <- This corner nearest sense wire solder pads.
+
+const int Physical_Position_Matrix_Array[4][8] = {  // 4 rows of bytes with 8 columns of bits
+    {25,26,29,30,24,27,28,31},
+    {16,19,20,23,17,18,21,22},
+    { 9,10,13,14, 8,11,12,15},
+    { 0, 3, 4, 7, 1, 2, 5, 6}         }; // Correct ! <- This corner nearest sense wire solder pads.
+
 void write_bit(char n, const int v)
 {
   if (trace_core_calls_p)
@@ -236,12 +248,13 @@ void write_bit(char n, const int v)
   }
   PORTD = ((n << 3) & (~ENABLE));
   PORTD |= ENABLE; // Enable separately to be safe.
-  //delayMicroseconds(WRITE_ON_US);
     #ifdef STYLUS_ENABLE
     //delayMicroseconds(STYLUS_ON_US);
     StylusPin.digitalWrite(HIGH);
     StylusPin.digitalWrite(LOW);    // The pulse is 1 us, timed to occur over expected sense pulse.
     delayMicroseconds(STYLUS_OFF_US);
+    #else
+    delayMicroseconds(WRITE_ON_US);
     #endif
   PORTD &= (~ENABLE);
   delayMicroseconds(WRITE_OFF_US);
@@ -351,7 +364,8 @@ unsigned int read_word_physical_row(unsigned int row)            // Andy added f
    *  
    */
   unsigned int v = 0;
-  const int physical_position[4][8] = { // 4 rows of bytes with 8 columns of bits
+/*   
+    const int Physical_Position_Word_Array[4][8] = { // 4 rows of bytes with 8 columns of bits
 
     {25,26,29,30,24,27,28,31},
     {16,19,20,23,17,18,21,22},
@@ -377,29 +391,82 @@ unsigned int read_word_physical_row(unsigned int row)            // Andy added f
     {26,19,10,3},
     {25,16,9,0}
 */
+/*
   }; 
+*/
   int col;
   for(col = 0; col <= 7; col++)
   {
     v <<= 1;
-    v |= read_bit(physical_position[row][col]);
+    v |= read_bit(Physical_Position_Matrix_Array[row][col]);
   }
   return v; // byte
+}                                                     // End of Andy's changes.
+
+unsigned int read_physical_col(unsigned int col)  // Andy added function to read bits in order of physical placement on board, a nibble at a time.
+{
+  //  Read a nibble by polling bit status of physical positions. Stored in lower part of a byte. 
+  //  Bottom row is LSB and referenced in array as 3. Top row is MSB and referenced in array as 0.
+  //  Leftmost column is 0, rightmost is column 7, per the array arrangement, which matches physical placement.
+  unsigned int v = 0;
+/*
+  const int Physical_Position_Matrix_Array[4][8] = {  // 4 rows of bytes with 8 columns of bits
+    {25,26,29,30,24,27,28,31},
+    {16,19,20,23,17,18,21,22},
+    { 9,10,13,14, 8,11,12,15},
+    { 0, 3, 4, 7, 1, 2, 5, 6}         }; // Correct ! <- This corner nearest sense wire solder pads.
+*/
+  int row;
+  for(row = 0; row <= 3; row++) //  Read from the top physical row first to shift it up to MSB
+  {
+    v <<= 1;
+    v |= read_bit(Physical_Position_Matrix_Array[row][col]);
+  }
+  return v; // byte
+}                                                     // End of Andy's changes.
+
+void write_physical_col(unsigned int col, unsigned int v)  // Andy added function to read bits in order of physical placement on board, a nibble at a time.
+{
+  //  Write a nibble column to physical positions. Stored in lower four bits of a byte. 
+  //  Bottom row is LSB and referenced in array as 3. Top row is MSB and referenced in array as 0.
+  //  Leftmost column is 0, rightmost is column 7, per the array arrangement, which matches physical placement.
+/*
+  const int Physical_Position_Matrix_Array[4][8] = {  // 4 rows of bytes with 8 columns of bits
+    {25,26,29,30,24,27,28,31},
+    {16,19,20,23,17,18,21,22},
+    { 9,10,13,14, 8,11,12,15},
+    { 0, 3, 4, 7, 1, 2, 5, 6}         }; // Correct ! <- This corner nearest sense wire solder pads.
+*/
+  int row;
+  unsigned int bit_val;
+  for(row = 3; row >= 0; row--) //  Write to bottom physical row first, then shift that bit away
+  {
+    // Extract the desired bit from the nibble in the byte. The "3-row" term translates row of the array to bit in the nibble per:
+    // array row | bit in nibble
+    //         3 | 0
+    //         2 | 1
+    //         1 | 2
+    //         0 | 3
+    if((v & (1UL<<(3-row) )) > 0) { bit_val = 1; }
+    else { bit_val = 0; }
+    write_bit(Physical_Position_Matrix_Array[row][col], bit_val);
+  }
 }                                                     // End of Andy's changes.
 
 bool read_bit_physical_position(unsigned int position_number)            // Andy added function to read bits in order of physical placement on board, a bit at a time.
 {
   bool bit_state = 0;
-  const int physical_position[32] = { // 4 rows of bytes with 8 columns of bits
+/*  
+  const int Physical_Position_Word_Array[32] = {   // 4 rows of bytes with 8 columns of bits
     25,26,29,30,24,27,28,31,
     16,19,20,23,17,18,21,22,
      9,10,13,14, 8,11,12,15,
-     0, 3, 4, 7, 1, 2, 5, 6           // Correct ! <- This corner nearest sense wire solder pads.
-  };
+     0, 3, 4, 7, 1, 2, 5, 6         };  // Correct ! <- This corner nearest sense wire solder pads.
+*/
   #ifdef ISOLATE_ONE_CORE
   position_number = ISOLATE_CORE_BIT;
   #endif
-  bit_state = read_bit(physical_position[position_number]);
+  bit_state = read_bit(Physical_Position_Word_Array[position_number]);
   return bit_state;
 }                                                     // End of Andy's changes.
 
@@ -1198,7 +1265,8 @@ void SendSerialPacketUpdate() {
     Serial.print(GameState,DEC);
     Serial.print(TopLevelStateMachine,DEC);
     // send packet prefix 3 bytes
-    BinaryStrZeroPad(CorePhysicalStateChanged);
+    // BinaryStrZeroPad(CorePhysicalStateChanged);
+    // BinaryStrZeroPad(read_physical_col(3));
     Serial.print("Abg");
     // send four bytes
     Serial.write(arr[0]);
@@ -1217,14 +1285,15 @@ void SendSerialPacketUpdate() {
     Serial.print("ms");
     */
     // Dump the screen array for debug
-    Serial.print("SA:");
-    for (uint8_t y=0; y<=3; y++)
-    {
-      for (uint8_t x=0; x<=7; x++)
-      {
-        Serial.print(screen_memory[y][x]); // prints from top left, 
-      }
-    }
+    //    Serial.print("SA:");
+    //    for (uint8_t y=0; y<=3; y++)
+    //    {
+    //      for (uint8_t x=0; x<=7; x++)
+    //      {
+    //        Serial.print(screen_memory[y][x]); // prints from top left, 
+    //      }
+    //    }
+    
     Serial.println();
     SerialPacketUpdateLastRunTime = nowTime;
     #endif
@@ -1239,27 +1308,32 @@ void GetPhysicalCoreState() {
 }
 
 void ScrollCoreMemory() {
-unsigned int ScreenReadCol = 0;
-unsigned int ScreenWriteCol = 0;
-unsigned int StringPosition = 0;
-unsigned int CharacterColumn = 0;
-
-// Is it time to scroll again?
-  if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
-  {
-    ScrollUpdateLastRunTime = nowTime;
-// Shift All Screen Content Left One Column
-    for (uint8_t x=6; x=0; x--)
+  // This function acts on the cores themselves, not on the LED array. 
+  // The LED array is updated from a seperate function, which reads the cores.
+  // The implication is that magnetic interference will affect the cores and propegate across the screen, showing how the cores are used as screen RAM.
+  unsigned int ScreenReadCol = 0;
+  unsigned int ScreenWriteCol = 0;
+  unsigned int StringPosition = 0;
+  unsigned int CharacterColumn = 0;
+  unsigned int Nibble = 0;
+  
+  // Is it time to scroll again?
+    if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
     {
-      // Read Screen Column x
-      // Write Screen Column x+1
+      ScrollUpdateLastRunTime = nowTime;
+      // Out of characters? Then don't scroll any more! Or scroll the screen until it is blank?
+      
+      // Shift All Screen Content Left One Column (leftmost column is 0, rightmost is 7)
+      for (uint8_t x=1; x<=7; x++)
+      {
+        Nibble = read_physical_col(x);        // Read Core Array Column x
+        write_physical_col( (x-1), Nibble);   // Then write it to Core Array Column x-1 which is one row to the left
+      }
+      // Move in new character column by column
+        // Read Character Column
+        // Write Screen Column
+    write_physical_col( 7, 0b00001111);  // test by shifting in a blank column, keeping in mind "1" is pixel off.
     }
-// Move in new character column by column
-  // Read Character Column
-  // Write Screen Column
-  }
-// Out of characters?
-
 }
 
 unsigned long Button1State(unsigned long clear_duration) // send a 1 or more to clear, 0 to use normally)
@@ -1647,8 +1721,8 @@ void loop(void)
       ReadCoresUpdateDisplay();
       CheckForSerialCommand();
       SendSerialPacketUpdate();
-      // ScrollCoreMemory();
-      TopLevelStateMachine = 1;
+      ScrollCoreMemory();
+      if(ButtonPressDuration_ms > 500) { TopLevelStateMachine = 1; }                                   //  Press to move to drawing state
       break;
     case 1:      // Default starting mode for simple drawing mode
       GameState = 0;
