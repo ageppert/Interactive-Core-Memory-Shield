@@ -1306,17 +1306,19 @@ void GetPhysicalCoreState() {
   PhysicalCoreStartupPattern[2] = read_word_physical_row(2);
   PhysicalCoreStartupPattern[3] = read_word_physical_row(3);
 }
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////  SCROLL CORE MEMORY
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void ScrollCoreMemory() {
   // This function acts on the cores themselves, not on the LED array. 
   // The LED array is updated from a seperate function, which reads the cores.
   // The implication is that magnetic interference will affect the cores and propegate across the screen, showing how the cores are used as screen RAM.
-  unsigned int ScreenReadCol = 0;
-  unsigned int ScreenWriteCol = 0;
-  unsigned int StringPosition = 0;
-  unsigned int CharacterColumn = 0;
-  unsigned int Nibble = 0;
-  
+  static uint8_t ScreenReadCol = 0;
+  static uint8_t ScreenWriteCol = 0;
+  static uint8_t StringPosition = 0;
+  static uint8_t CharacterColumn = 0;
+  static uint8_t Nibble = 0;
+  static uint8_t NewNibble = 0b00001111;  
   // Is it time to scroll again?
     if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
     {
@@ -1324,15 +1326,17 @@ void ScrollCoreMemory() {
       // Out of characters? Then don't scroll any more! Or scroll the screen until it is blank?
       
       // Shift All Screen Content Left One Column (leftmost column is 0, rightmost is 7)
-      for (uint8_t x=1; x<=7; x++)
-      {
-        Nibble = read_physical_col(x);        // Read Core Array Column x
-        write_physical_col( (x-1), Nibble);   // Then write it to Core Array Column x-1 which is one row to the left
-      }
+        for (uint8_t x=1; x<=7; x++)
+        {
+          Nibble = read_physical_col(x);        // Read Core Array Column x
+          write_physical_col( (x-1), Nibble);   // Then write it to Core Array Column x-1 which is one row to the left
+        }
       // Move in new character column by column
         // Read Character Column
         // Write Screen Column
-    write_physical_col( 7, 0b00001111);  // test by shifting in a blank column, keeping in mind "1" is pixel off.
+    NewNibble = NewNibble<<1;
+    if(NewNibble > 0b00010000) {NewNibble = 0b00000001;}
+    write_physical_col( 7, NewNibble);  // test by shifting in a blank column, keeping in mind "1" is pixel off.
     }
 }
 
@@ -1742,7 +1746,7 @@ void loop(void)
       ReadCoresUpdateDisplay();
       CheckForSerialCommand();
       SendSerialPacketUpdate();
-      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); TopLevelStateMachine = 1; }      // WRITE BACK ARROW FAR RIGHT TO GO BACK TO DEFAULT MODE
+      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); TopLevelStateMachine = 0; }      // WRITE BACK ARROW FAR RIGHT TO GO BACK TO DEFAULT MODE
       break;
     case 3:      // Setup a game of snake
       // CorePhysicalStateChanged = CheckForCoreStateChange();   // Look for stylus touch [32 bit long physical screen position]. Moved into game logic because when two instances are active it doesn't work for some reason. Memory?
@@ -1757,7 +1761,7 @@ void loop(void)
       if(get_gesture()=="E") { TopLevelStateMachine = 0; }                                            // SWIPE LEFT ALONG BOTTOM ROW TO EXIT GAME
       #endif
       // WRITE BACK ARROW FAR RIGHT TO GO BACK TO DEFAULT MODE
-      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); GameState = 0; TopLevelStateMachine = 1; }
+      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); GameState = 0; TopLevelStateMachine = 0; }
       if(ButtonPressDuration_ms > 50) { GameState = 0; }                                     // short press to restart game
       break;
     default:
