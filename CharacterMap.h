@@ -2,8 +2,9 @@
 
 // A full alphabet table is 26 x 4 x 4 bits = 54 bytes (if stored maximum efficiently)
 // Array arranged directly as " CORE MEMORY!" = 13 elements, numbered 0 to 12
-
-const static bool character_font[14][4][4] PROGMEM = {   // Character, Column, Row 
+// Need to use program memory for constants because over 77% usage in UNO causes instability.
+// https://forum.arduino.cc/index.php?topic=45681.0
+const static bool character_font[14][4][4] PROGMEM = {   // Character, Row, Column
 {
   {0,0,0,0}, //  
   {0,0,0,0},

@@ -1344,10 +1344,12 @@ void ScrollCoreMemory() {
         // Read Character Column
           NewNibble = 0;
           if (CharacterColumn == 4) {CharacterColumn = 0; StringPosition++;}
-          for (uint8_t i=0; i<=3; i++)
+          for (uint8_t i=0; i<=3; i++) // iterate through the four rows
           {
             NewNibble <<= 1;
             NewNibble |= pgm_read_byte(&(character_font[StringPosition][i][CharacterColumn]));
+            // Need to use program memory for constants because over 77% usage in UNO causes instability.
+            // https://forum.arduino.cc/index.php?topic=45681.0
           }
           CharacterColumn++; // prepare for next column
         // Write Screen Column
