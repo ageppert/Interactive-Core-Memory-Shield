@@ -85,8 +85,8 @@ Duration of stylus over a core increase intensity of chosen color.
   2019-04-11 Created core scan to report which bit changed, without updating the display.
   2019-04-13 Cleaned up state machine, but broke the stylus detection point functionality, rolled back to 04-12, got it working again. Very strange problem in state 3.
   2019-04-14 Add state 3 hand off to snake game with debug. Moved snake game back to single file to avoid dealing with data between files. Go global!
-  2091-04-15 Move gesture mode to game to start game over. Basic full game play is done!
-
+  2019-04-15 Move gesture mode to game to start game over. Basic full game play is done!
+  2019-04-16 Moved to GitHub to keep change history.
 */
 
 // Rough-and-ready Arduino code for testing, calibrating and using core memory shield.
@@ -162,7 +162,7 @@ const unsigned long SerialPacketUpdatePeriod = 50 ; // ms
 const unsigned long CoreChangeDetectUpdatePeriod = 30 ; // ms (effectively debounces the stylus movement)
 const unsigned long GestureTimeout = 3000 ; // ms
 const unsigned long SnakeGameUpdatePeriod = 30 ; // ms
-const unsigned long ScrollUpdatePeriod = 300; // ms
+const unsigned long ScrollUpdatePeriod = 175; // ms
 volatile unsigned long NeopixelUpdateLastRunTime;
 volatile unsigned long SerialPacketUpdateLastRunTime;
 volatile unsigned long CoreChangeDetectUpdateLastRunTime;
@@ -1315,6 +1315,15 @@ void ScrollCoreMemory() {
   // The implication is that magnetic interference will affect the cores and propegate across the screen, showing how the cores are used as screen RAM.
   static uint8_t ScreenReadCol = 0;
   static uint8_t ScreenWriteCol = 0;
+  /* Skip this for now, just go through the array of text directly.
+   static char TextString[6]; // an array big enough for a 5 character string
+   TextString[0] = 'C'; // the string consists of 5 characters
+   TextString[1] = 'O';
+   TextString[2] = 'R';
+   TextString[3] = 'E';
+   TextString[4] = ' ';
+   TextString[5] = 0; // 6th array element is a null terminator
+  */
   static uint8_t StringPosition = 0;
   static uint8_t CharacterColumn = 0;
   static uint8_t Nibble = 0;
@@ -1323,8 +1332,8 @@ void ScrollCoreMemory() {
     if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
     {
       ScrollUpdateLastRunTime = nowTime;
-      // Out of characters? Then don't scroll any more! Or scroll the screen until it is blank?
-      
+      // Out of characters? Go back to the beginning and scroll again.
+        if ( StringPosition == 13 ) { StringPosition = 0; CharacterColumn = 0; }
       // Shift All Screen Content Left One Column (leftmost column is 0, rightmost is 7)
         for (uint8_t x=1; x<=7; x++)
         {
@@ -1333,10 +1342,22 @@ void ScrollCoreMemory() {
         }
       // Move in new character column by column
         // Read Character Column
+          NewNibble = 0;
+          if (CharacterColumn == 4) {CharacterColumn = 0; StringPosition++;}
+          for (uint8_t i=0; i<=3; i++)
+          {
+            NewNibble <<= 1;
+            NewNibble |= pgm_read_byte(&(character_font[StringPosition][i][CharacterColumn]));
+          }
+          CharacterColumn++; // prepare for next column
         // Write Screen Column
-    NewNibble = NewNibble<<1;
-    if(NewNibble > 0b00010000) {NewNibble = 0b00000001;}
-    write_physical_col( 7, NewNibble);  // test by shifting in a blank column, keeping in mind "1" is pixel off.
+          NewNibble = ~NewNibble; // invert the incoming nibble, keeping in mind "1" is pixel off.  
+          write_physical_col( 7, NewNibble);      
+        // Test writing something
+        //  NewNibble = NewNibble<<1;
+        //  if(NewNibble > 0b00010000) {NewNibble = 0b00000001;}
+        //  write_physical_col( 7, NewNibble);  // test by shifting a new column, keeping in mind "1" is pixel off.
+        // 
     }
 }
 
