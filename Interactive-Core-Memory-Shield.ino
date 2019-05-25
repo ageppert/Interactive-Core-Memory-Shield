@@ -193,6 +193,8 @@ volatile signed int OldSnakeLength;
 volatile unsigned int TestX = 0;
 volatile unsigned int TestY = 0;
 bool MovementDetected = false;
+volatile uint16_t FreeRAMMinimum = 65535; 
+volatile uint16_t FreeRAMMaximum = 0; 
 
 volatile int screen_memory[4][8] = { // 4 rows of bytes with 8 columns of bits
     { 0,-2,0,-2,0,0,-1, 0},
@@ -226,6 +228,29 @@ const int Physical_Position_Matrix_Array[4][8] = {  // 4 rows of bytes with 8 co
     {16,19,20,23,17,18,21,22},
     { 9,10,13,14, 8,11,12,15},
     { 0, 3, 4, 7, 1, 2, 5, 6}         }; // Correct ! <- This corner nearest sense wire solder pads.
+
+// Memory Monitor
+// https://learn.adafruit.com/memories-of-an-arduino/measuring-free-memory
+// Sprinkle the test around in different functions to look for low points.
+// Upon checkin of this branch, min/max 141/229 bytes. Arduino IDE report Global variables 1620 bytes (79%) of 2048.
+// Somewhere between 80-85% things stop working all together.
+  #ifdef __arm__
+  // should use uinstd.h to define sbrk but Due causes a conflict
+  extern "C" char* sbrk(int incr);
+  #else  // __ARM__
+  extern char *__brkval;
+  #endif  // __arm__
+   
+  uint8_t freeMemory() {
+    char top;
+  #ifdef __arm__
+    return &top - reinterpret_cast<char*>(sbrk(0));
+  #elif defined(CORE_TEENSY) || (ARDUINO > 103 && ARDUINO != 151)
+    return &top - __brkval;
+  #else  // __arm__
+    return __brkval ? &top - __brkval : &top - __malloc_heap_start;
+  #endif  // __arm__
+  }
 
 void write_bit(char n, const int v)
 {
@@ -987,6 +1012,8 @@ void setup(void)
 #endif
   pinMode(CLEAR_BUTTON_INPUT_PIN, INPUT);
   digitalWrite(CLEAR_BUTTON_INPUT_PIN, HIGH); // Pull Up High
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 // Fill the dots one after the other with a color
@@ -1000,6 +1027,8 @@ void colorWipe(uint32_t c, uint8_t wait) {
 
 void CheckForSerialCommand() {
   char c;
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
   if(Serial.available() > 0)
   {
     c = Serial.read();
@@ -1076,6 +1105,8 @@ void CheckForSerialCommand() {
       Serial.println(c);
     }
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void ReadCoresUpdateDisplay() {
@@ -1113,6 +1144,8 @@ void ReadCoresUpdateDisplay() {
     ReadTime = EndReadTime - StartReadTime;  
     NeopixelUpdateLastRunTime = nowTime;
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void UpdateDisplayFromScreenArray() {
@@ -1151,6 +1184,8 @@ void UpdateDisplayFromScreenArray() {
     ReadTime = EndReadTime - StartReadTime;  
     NeopixelUpdateLastRunTime = nowTime;
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void CheckForCoreStateChange()
@@ -1215,6 +1250,8 @@ void CheckForCoreStateChange()
     }
   }
   // return (PhysicalChanged); // Return the changed logical bit positions as 32 bit unsigned long.
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void BinaryStrZeroPad(unsigned long Number){
@@ -1293,11 +1330,16 @@ void SendSerialPacketUpdate() {
     //        Serial.print(screen_memory[y][x]); // prints from top left, 
     //      }
     //    }
-    
+    Serial.print("FREE RAM MIN/MAX: ");
+    Serial.print(FreeRAMMinimum);
+    Serial.print("/");
+    Serial.print(FreeRAMMaximum);
     Serial.println();
     SerialPacketUpdateLastRunTime = nowTime;
     #endif
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void GetPhysicalCoreState() {
@@ -1361,6 +1403,8 @@ void ScrollCoreMemory() {
         //  write_physical_col( 7, NewNibble);  // test by shifting a new column, keeping in mind "1" is pixel off.
         // 
     }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 unsigned long Button1State(unsigned long clear_duration) // send a 1 or more to clear, 0 to use normally)
@@ -1672,6 +1716,8 @@ void SnakeGameLogic()
       OldSnakeLength = SnakeLength;
     }
     AreYouAWinner();
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////  SNAKE GAME STATE MACHINE LOGIC
@@ -1731,6 +1777,8 @@ void UpdateSnakeGame()
     }
     SnakeGameUpdateLastRunTime = nowTime;
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////  MAIN LOOP
@@ -1793,4 +1841,6 @@ void loop(void)
 
   EndLoopTime = millis(); 
   LoopTime = EndLoopTime - StartLoopTime;  
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
