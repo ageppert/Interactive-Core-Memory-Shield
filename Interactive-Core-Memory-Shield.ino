@@ -161,7 +161,7 @@ const unsigned long NeopixelUpdatePeriod = 25 ; // ms (also reads the cores)
 const unsigned long SerialPacketUpdatePeriod = 50 ; // ms
 const unsigned long CoreChangeDetectUpdatePeriod = 30 ; // ms (effectively debounces the stylus movement)
 const unsigned long GestureTimeout = 3000 ; // ms
-const unsigned long SnakeGameUpdatePeriod = 30 ; // ms
+const unsigned long SnakeGameUpdatePeriod = 100 ; // ms
 const unsigned long ScrollUpdatePeriod = 175; // ms
 volatile unsigned long NeopixelUpdateLastRunTime;
 volatile unsigned long SerialPacketUpdateLastRunTime;
@@ -1188,6 +1188,8 @@ void UpdateDisplayFromScreenArray() {
   if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
+// New version - this will respond with where the stylus is in real-time, not just when a core changes.
+// Should provide more lively feel with the stylus in the snake game.
 void CheckForCoreStateChange()
 {
   // Which bits changed from the last call?
@@ -1201,9 +1203,10 @@ void CheckForCoreStateChange()
   //  {16,19,20,23,17,18,21,22},
   //  { 9,10,13,14, 8,11,12,15},
   //  { 0, 3, 4, 7, 1, 2, 5, 6} // Correct ! <- This corner nearest sense wire solder pads. This corner is physical core 0 in the 32 bit long.
-  write_word(0xffffffff); // To detect changes the cores must be written every time to see if something changes.
   if ((nowTime - CoreChangeDetectUpdateLastRunTime) >= CoreChangeDetectUpdatePeriod)
   {
+    write_word(0xffffffff); // To detect changes the cores must be written every time to see if something changes.
+    CorePhysicalStateLast = 0xffffffff;
     CorePhysicalStateNow = read_logical_word(); 
       // Test that each bit works
       //                        31    22      16       8       0
@@ -1219,34 +1222,33 @@ void CheckForCoreStateChange()
     {
       LogicalChanged = 0;
     }
-    CorePhysicalStateLast = CorePhysicalStateNow;
     CoreChangeDetectUpdateLastRunTime = nowTime;
-  }
-  // Convert logical to physical screen 32 bit long
-  PhysicalChanged = 0;
-  for(int n = 31; n >= 0; n--)
-  {
-    PhysicalChanged = PhysicalChanged << 1; // shift left to make room for the next bit
-    // isolate logical bit of interest from LogicalChanged
-    if (LogicalChanged & (1UL << logical_to_physical_position[n]) ) // is that bit is set
+    // Convert logical to physical screen 32 bit long
+    PhysicalChanged = 0;
+    for(int n = 31; n >= 0; n--)
     {
-      PhysicalChanged = PhysicalChanged + 1; // move 1 into PhysicalChanged
+      PhysicalChanged = PhysicalChanged << 1; // shift left to make room for the next bit
+      // isolate logical bit of interest from LogicalChanged
+      if (LogicalChanged & (1UL << logical_to_physical_position[n]) ) // is that bit is set
+      {
+        PhysicalChanged = PhysicalChanged + 1; // move 1 into PhysicalChanged
+      }
+      else 
+      {
+        PhysicalChanged = PhysicalChanged + 0; // move 0 into PhysicalChanged
+      }
     }
-    else 
+    CorePhysicalStateChanged = PhysicalChanged; // directly update the global variable
+    // Convert 32 bit long PhysicalChanged to array stylus_memory[y][x]
+    int i = 0; // bit position in the 32 bit word
+    for (uint8_t x=0; x<=7; x++)      // The ordering of this update takes an array that is illustrated in the source code in the way it is viewed on screen.
     {
-      PhysicalChanged = PhysicalChanged + 0; // move 0 into PhysicalChanged
-    }
-  }
-  CorePhysicalStateChanged = PhysicalChanged; // directly update the global variable
-  // Convert 32 bit long PhysicalChanged to array stylus_memory[y][x]
-  int i = 0; // bit position in the 32 bit word
-  for (uint8_t x=0; x<=7; x++)      // The ordering of this update takes an array that is illustrated in the source code in the way it is viewed on screen.
-  {
-    for (uint8_t y=0; y<=3; y++)
-    {
-      i = ( (7-x) + (3-y) * 8 );
-      if ((PhysicalChanged & (1UL<<i)) > 0) { stylus_memory[y][x] = 1; }
-      else { stylus_memory[y][x] = 0; }
+      for (uint8_t y=0; y<=3; y++)
+      {
+        i = ( (7-x) + (3-y) * 8 );
+        if ((PhysicalChanged & (1UL<<i)) > 0) { stylus_memory[y][x] = 1; }
+        else { stylus_memory[y][x] = 0; }
+      }
     }
   }
   // return (PhysicalChanged); // Return the changed logical bit positions as 32 bit unsigned long.
