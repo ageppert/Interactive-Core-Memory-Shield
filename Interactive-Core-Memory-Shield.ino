@@ -163,11 +163,13 @@ const unsigned long CoreChangeDetectUpdatePeriod = 30 ; // ms (effectively debou
 const unsigned long GestureTimeout = 3000 ; // ms
 const unsigned long SnakeGameUpdatePeriod = 100 ; // ms
 const unsigned long ScrollUpdatePeriod = 175; // ms
+const unsigned long MultiColorDrawingUpdatePeriod = 150; // ms
 volatile unsigned long NeopixelUpdateLastRunTime;
 volatile unsigned long SerialPacketUpdateLastRunTime;
 volatile unsigned long CoreChangeDetectUpdateLastRunTime;
 volatile unsigned long SnakeGameUpdateLastRunTime;
 volatile unsigned long ScrollUpdateLastRunTime;
+volatile unsigned long MultiColorDrawingUpdateLastRunTime;
 volatile unsigned long nowTime;
 volatile unsigned long StartReadTime;
 volatile unsigned long EndReadTime;
@@ -1109,6 +1111,48 @@ void CheckForSerialCommand() {
   if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
+void MultiColorDrawingUpdate() {
+  if ((nowTime - MultiColorDrawingUpdateLastRunTime) >= MultiColorDrawingUpdatePeriod)
+  {
+    //  Is stylus active at all?
+    write_word(0xffffffff);   // To detect changes the cores must be written every time to see if something changes.
+    if( read_logical_word() ) // Anything other than 0 indicates the stylus is present, possibly more affecting more than one core.
+    {
+      //  NO, exit the function.
+      //  YES
+        //  Is stylus pointing to the pallette?
+        if ( read_bit_physical_position(7) )
+        {
+            //  Set pen active color to stylus selected color or erase
+        }
+        if ( read_bit_physical_position(15) )
+        {
+            //  Set pen active color to stylus selected color or erase
+        }
+        if ( read_bit_physical_position(23) )
+        {
+            //  Set pen active color to stylus selected color or erase
+        }
+        if ( read_bit_physical_position(31) )
+        {
+            //  Set pen active color to stylus selected color or erase
+        }
+        // Is stylus pointing to drawing space?
+          //  YES
+            //  Is pen set to erase?
+              //  YES
+                //  Erase the pixel, exit the function.
+              //  NO
+                //  Read existing pixel information
+                //  Increment the pixel RGB by pen set color and intensity rate
+    strip.show(); 
+    MultiColorDrawingUpdateLastRunTime = nowTime;
+    if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+    if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
+    }
+  }
+}
+
 void ReadCoresUpdateDisplay() {
     // Read 32 bits and write to NeoPixel
   uint32_t light = strip.Color(0, 0,150);
@@ -1803,7 +1847,8 @@ void loop(void)
       break;
     case 1:      // Default starting mode for simple drawing mode
       GameState = 0;
-      ReadCoresUpdateDisplay();
+      ReadCoresUpdateDisplay();  // Simple monochrome drawing mode with no eraser
+      MultiColorDrawingUpdate(); // Multi-color drawing mode with eraser    
       CheckForSerialCommand();
       SendSerialPacketUpdate();
    // if(get_gesture()=="E") { write_word(0xffffffff); }                                              // SWIPE LEFT ALONG BOTTOM ROW TO CLEAR SCREEN (does not work in drawing move because the cores aren't detected as changing)
