@@ -85,8 +85,8 @@ Duration of stylus over a core increase intensity of chosen color.
   2019-04-11 Created core scan to report which bit changed, without updating the display.
   2019-04-13 Cleaned up state machine, but broke the stylus detection point functionality, rolled back to 04-12, got it working again. Very strange problem in state 3.
   2019-04-14 Add state 3 hand off to snake game with debug. Moved snake game back to single file to avoid dealing with data between files. Go global!
-  2091-04-15 Move gesture mode to game to start game over. Basic full game play is done!
-
+  2019-04-15 Move gesture mode to game to start game over. Basic full game play is done!
+  2019-04-16 Moved to GitHub to keep change history.
 */
 
 // Rough-and-ready Arduino code for testing, calibrating and using core memory shield.
@@ -124,7 +124,7 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800)
 //#define START_WITH_ALL_BITS_SET
 //#define ISOLATE_ONE_CORE
   #define ISOLATE_CORE_BIT 31
-#define STYLUS_ENABLE
+//#define STYLUS_ENABLE
 #define STYLUS_PIN 19 // Will use FastDigitalPin library 
 #include <FastDigitalPin.h> // Arduino Library Manager provides this from https://github.com/hippymulehead/FastDigitalPin
 FastDigitalPin StylusPin(STYLUS_PIN);
@@ -161,8 +161,8 @@ const unsigned long NeopixelUpdatePeriod = 25 ; // ms (also reads the cores)
 const unsigned long SerialPacketUpdatePeriod = 50 ; // ms
 const unsigned long CoreChangeDetectUpdatePeriod = 30 ; // ms (effectively debounces the stylus movement)
 const unsigned long GestureTimeout = 3000 ; // ms
-const unsigned long SnakeGameUpdatePeriod = 30 ; // ms
-const unsigned long ScrollUpdatePeriod = 300; // ms
+const unsigned long SnakeGameUpdatePeriod = 100 ; // ms
+const unsigned long ScrollUpdatePeriod = 175; // ms
 volatile unsigned long NeopixelUpdateLastRunTime;
 volatile unsigned long SerialPacketUpdateLastRunTime;
 volatile unsigned long CoreChangeDetectUpdateLastRunTime;
@@ -193,6 +193,8 @@ volatile signed int OldSnakeLength;
 volatile unsigned int TestX = 0;
 volatile unsigned int TestY = 0;
 bool MovementDetected = false;
+volatile uint16_t FreeRAMMinimum = 65535; 
+volatile uint16_t FreeRAMMaximum = 0; 
 
 volatile int screen_memory[4][8] = { // 4 rows of bytes with 8 columns of bits
     { 0,-2,0,-2,0,0,-1, 0},
@@ -215,6 +217,41 @@ const int brightness_position[32] = { // 4 rows of bytes with 8 columns of bits
     190,180, 90, 80, 80, 90,180,190      // Correct ! <- This corner nearest sense wire solder pads. This is LED #31.
   };
 
+const int Physical_Position_Word_Array[32] = {   // 4 rows of bytes with 8 columns of bits
+    25,26,29,30,24,27,28,31,
+    16,19,20,23,17,18,21,22,
+     9,10,13,14, 8,11,12,15,
+     0, 3, 4, 7, 1, 2, 5, 6         };  // Correct ! <- This corner nearest sense wire solder pads.
+
+const int Physical_Position_Matrix_Array[4][8] = {  // 4 rows of bytes with 8 columns of bits
+    {25,26,29,30,24,27,28,31},
+    {16,19,20,23,17,18,21,22},
+    { 9,10,13,14, 8,11,12,15},
+    { 0, 3, 4, 7, 1, 2, 5, 6}         }; // Correct ! <- This corner nearest sense wire solder pads.
+
+// Memory Monitor
+// https://learn.adafruit.com/memories-of-an-arduino/measuring-free-memory
+// Sprinkle the test around in different functions to look for low points.
+// Upon checkin of this branch, min/max 141/229 bytes. Arduino IDE report Global variables 1620 bytes (79%) of 2048.
+// Somewhere between 80-85% things stop working all together.
+  #ifdef __arm__
+  // should use uinstd.h to define sbrk but Due causes a conflict
+  extern "C" char* sbrk(int incr);
+  #else  // __ARM__
+  extern char *__brkval;
+  #endif  // __arm__
+   
+  uint8_t freeMemory() {
+    char top;
+  #ifdef __arm__
+    return &top - reinterpret_cast<char*>(sbrk(0));
+  #elif defined(CORE_TEENSY) || (ARDUINO > 103 && ARDUINO != 151)
+    return &top - __brkval;
+  #else  // __arm__
+    return __brkval ? &top - __brkval : &top - __malloc_heap_start;
+  #endif  // __arm__
+  }
+
 void write_bit(char n, const int v)
 {
   if (trace_core_calls_p)
@@ -236,12 +273,13 @@ void write_bit(char n, const int v)
   }
   PORTD = ((n << 3) & (~ENABLE));
   PORTD |= ENABLE; // Enable separately to be safe.
-  //delayMicroseconds(WRITE_ON_US);
     #ifdef STYLUS_ENABLE
     //delayMicroseconds(STYLUS_ON_US);
     StylusPin.digitalWrite(HIGH);
     StylusPin.digitalWrite(LOW);    // The pulse is 1 us, timed to occur over expected sense pulse.
     delayMicroseconds(STYLUS_OFF_US);
+    #else
+    delayMicroseconds(WRITE_ON_US);
     #endif
   PORTD &= (~ENABLE);
   delayMicroseconds(WRITE_OFF_US);
@@ -351,7 +389,8 @@ unsigned int read_word_physical_row(unsigned int row)            // Andy added f
    *  
    */
   unsigned int v = 0;
-  const int physical_position[4][8] = { // 4 rows of bytes with 8 columns of bits
+/*   
+    const int Physical_Position_Word_Array[4][8] = { // 4 rows of bytes with 8 columns of bits
 
     {25,26,29,30,24,27,28,31},
     {16,19,20,23,17,18,21,22},
@@ -377,29 +416,82 @@ unsigned int read_word_physical_row(unsigned int row)            // Andy added f
     {26,19,10,3},
     {25,16,9,0}
 */
+/*
   }; 
+*/
   int col;
   for(col = 0; col <= 7; col++)
   {
     v <<= 1;
-    v |= read_bit(physical_position[row][col]);
+    v |= read_bit(Physical_Position_Matrix_Array[row][col]);
   }
   return v; // byte
+}                                                     // End of Andy's changes.
+
+unsigned int read_physical_col(unsigned int col)  // Andy added function to read bits in order of physical placement on board, a nibble at a time.
+{
+  //  Read a nibble by polling bit status of physical positions. Stored in lower part of a byte. 
+  //  Bottom row is LSB and referenced in array as 3. Top row is MSB and referenced in array as 0.
+  //  Leftmost column is 0, rightmost is column 7, per the array arrangement, which matches physical placement.
+  unsigned int v = 0;
+/*
+  const int Physical_Position_Matrix_Array[4][8] = {  // 4 rows of bytes with 8 columns of bits
+    {25,26,29,30,24,27,28,31},
+    {16,19,20,23,17,18,21,22},
+    { 9,10,13,14, 8,11,12,15},
+    { 0, 3, 4, 7, 1, 2, 5, 6}         }; // Correct ! <- This corner nearest sense wire solder pads.
+*/
+  int row;
+  for(row = 0; row <= 3; row++) //  Read from the top physical row first to shift it up to MSB
+  {
+    v <<= 1;
+    v |= read_bit(Physical_Position_Matrix_Array[row][col]);
+  }
+  return v; // byte
+}                                                     // End of Andy's changes.
+
+void write_physical_col(unsigned int col, unsigned int v)  // Andy added function to read bits in order of physical placement on board, a nibble at a time.
+{
+  //  Write a nibble column to physical positions. Stored in lower four bits of a byte. 
+  //  Bottom row is LSB and referenced in array as 3. Top row is MSB and referenced in array as 0.
+  //  Leftmost column is 0, rightmost is column 7, per the array arrangement, which matches physical placement.
+/*
+  const int Physical_Position_Matrix_Array[4][8] = {  // 4 rows of bytes with 8 columns of bits
+    {25,26,29,30,24,27,28,31},
+    {16,19,20,23,17,18,21,22},
+    { 9,10,13,14, 8,11,12,15},
+    { 0, 3, 4, 7, 1, 2, 5, 6}         }; // Correct ! <- This corner nearest sense wire solder pads.
+*/
+  int row;
+  unsigned int bit_val;
+  for(row = 3; row >= 0; row--) //  Write to bottom physical row first, then shift that bit away
+  {
+    // Extract the desired bit from the nibble in the byte. The "3-row" term translates row of the array to bit in the nibble per:
+    // array row | bit in nibble
+    //         3 | 0
+    //         2 | 1
+    //         1 | 2
+    //         0 | 3
+    if((v & (1UL<<(3-row) )) > 0) { bit_val = 1; }
+    else { bit_val = 0; }
+    write_bit(Physical_Position_Matrix_Array[row][col], bit_val);
+  }
 }                                                     // End of Andy's changes.
 
 bool read_bit_physical_position(unsigned int position_number)            // Andy added function to read bits in order of physical placement on board, a bit at a time.
 {
   bool bit_state = 0;
-  const int physical_position[32] = { // 4 rows of bytes with 8 columns of bits
+/*  
+  const int Physical_Position_Word_Array[32] = {   // 4 rows of bytes with 8 columns of bits
     25,26,29,30,24,27,28,31,
     16,19,20,23,17,18,21,22,
      9,10,13,14, 8,11,12,15,
-     0, 3, 4, 7, 1, 2, 5, 6           // Correct ! <- This corner nearest sense wire solder pads.
-  };
+     0, 3, 4, 7, 1, 2, 5, 6         };  // Correct ! <- This corner nearest sense wire solder pads.
+*/
   #ifdef ISOLATE_ONE_CORE
   position_number = ISOLATE_CORE_BIT;
   #endif
-  bit_state = read_bit(physical_position[position_number]);
+  bit_state = read_bit(Physical_Position_Word_Array[position_number]);
   return bit_state;
 }                                                     // End of Andy's changes.
 
@@ -920,6 +1012,8 @@ void setup(void)
 #endif
   pinMode(CLEAR_BUTTON_INPUT_PIN, INPUT);
   digitalWrite(CLEAR_BUTTON_INPUT_PIN, HIGH); // Pull Up High
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 // Fill the dots one after the other with a color
@@ -933,6 +1027,8 @@ void colorWipe(uint32_t c, uint8_t wait) {
 
 void CheckForSerialCommand() {
   char c;
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
   if(Serial.available() > 0)
   {
     c = Serial.read();
@@ -1009,6 +1105,8 @@ void CheckForSerialCommand() {
       Serial.println(c);
     }
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void ReadCoresUpdateDisplay() {
@@ -1046,6 +1144,8 @@ void ReadCoresUpdateDisplay() {
     ReadTime = EndReadTime - StartReadTime;  
     NeopixelUpdateLastRunTime = nowTime;
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void UpdateDisplayFromScreenArray() {
@@ -1084,8 +1184,12 @@ void UpdateDisplayFromScreenArray() {
     ReadTime = EndReadTime - StartReadTime;  
     NeopixelUpdateLastRunTime = nowTime;
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
+// New version - this will respond with where the stylus is in real-time, not just when a core changes.
+// Should provide more lively feel with the stylus in the snake game.
 void CheckForCoreStateChange()
 {
   // Which bits changed from the last call?
@@ -1099,9 +1203,10 @@ void CheckForCoreStateChange()
   //  {16,19,20,23,17,18,21,22},
   //  { 9,10,13,14, 8,11,12,15},
   //  { 0, 3, 4, 7, 1, 2, 5, 6} // Correct ! <- This corner nearest sense wire solder pads. This corner is physical core 0 in the 32 bit long.
-  write_word(0xffffffff); // To detect changes the cores must be written every time to see if something changes.
   if ((nowTime - CoreChangeDetectUpdateLastRunTime) >= CoreChangeDetectUpdatePeriod)
   {
+    write_word(0xffffffff); // To detect changes the cores must be written every time to see if something changes.
+    CorePhysicalStateLast = 0xffffffff;
     CorePhysicalStateNow = read_logical_word(); 
       // Test that each bit works
       //                        31    22      16       8       0
@@ -1117,37 +1222,38 @@ void CheckForCoreStateChange()
     {
       LogicalChanged = 0;
     }
-    CorePhysicalStateLast = CorePhysicalStateNow;
     CoreChangeDetectUpdateLastRunTime = nowTime;
-  }
-  // Convert logical to physical screen 32 bit long
-  PhysicalChanged = 0;
-  for(int n = 31; n >= 0; n--)
-  {
-    PhysicalChanged = PhysicalChanged << 1; // shift left to make room for the next bit
-    // isolate logical bit of interest from LogicalChanged
-    if (LogicalChanged & (1UL << logical_to_physical_position[n]) ) // is that bit is set
+    // Convert logical to physical screen 32 bit long
+    PhysicalChanged = 0;
+    for(int n = 31; n >= 0; n--)
     {
-      PhysicalChanged = PhysicalChanged + 1; // move 1 into PhysicalChanged
+      PhysicalChanged = PhysicalChanged << 1; // shift left to make room for the next bit
+      // isolate logical bit of interest from LogicalChanged
+      if (LogicalChanged & (1UL << logical_to_physical_position[n]) ) // is that bit is set
+      {
+        PhysicalChanged = PhysicalChanged + 1; // move 1 into PhysicalChanged
+      }
+      else 
+      {
+        PhysicalChanged = PhysicalChanged + 0; // move 0 into PhysicalChanged
+      }
     }
-    else 
+    CorePhysicalStateChanged = PhysicalChanged; // directly update the global variable
+    // Convert 32 bit long PhysicalChanged to array stylus_memory[y][x]
+    int i = 0; // bit position in the 32 bit word
+    for (uint8_t x=0; x<=7; x++)      // The ordering of this update takes an array that is illustrated in the source code in the way it is viewed on screen.
     {
-      PhysicalChanged = PhysicalChanged + 0; // move 0 into PhysicalChanged
-    }
-  }
-  CorePhysicalStateChanged = PhysicalChanged; // directly update the global variable
-  // Convert 32 bit long PhysicalChanged to array stylus_memory[y][x]
-  int i = 0; // bit position in the 32 bit word
-  for (uint8_t x=0; x<=7; x++)      // The ordering of this update takes an array that is illustrated in the source code in the way it is viewed on screen.
-  {
-    for (uint8_t y=0; y<=3; y++)
-    {
-      i = ( (7-x) + (3-y) * 8 );
-      if ((PhysicalChanged & (1UL<<i)) > 0) { stylus_memory[y][x] = 1; }
-      else { stylus_memory[y][x] = 0; }
+      for (uint8_t y=0; y<=3; y++)
+      {
+        i = ( (7-x) + (3-y) * 8 );
+        if ((PhysicalChanged & (1UL<<i)) > 0) { stylus_memory[y][x] = 1; }
+        else { stylus_memory[y][x] = 0; }
+      }
     }
   }
   // return (PhysicalChanged); // Return the changed logical bit positions as 32 bit unsigned long.
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void BinaryStrZeroPad(unsigned long Number){
@@ -1198,7 +1304,8 @@ void SendSerialPacketUpdate() {
     Serial.print(GameState,DEC);
     Serial.print(TopLevelStateMachine,DEC);
     // send packet prefix 3 bytes
-    BinaryStrZeroPad(CorePhysicalStateChanged);
+    // BinaryStrZeroPad(CorePhysicalStateChanged);
+    // BinaryStrZeroPad(read_physical_col(3));
     Serial.print("Abg");
     // send four bytes
     Serial.write(arr[0]);
@@ -1217,18 +1324,24 @@ void SendSerialPacketUpdate() {
     Serial.print("ms");
     */
     // Dump the screen array for debug
-    Serial.print("SA:");
-    for (uint8_t y=0; y<=3; y++)
-    {
-      for (uint8_t x=0; x<=7; x++)
-      {
-        Serial.print(screen_memory[y][x]); // prints from top left, 
-      }
-    }
+    //    Serial.print("SA:");
+    //    for (uint8_t y=0; y<=3; y++)
+    //    {
+    //      for (uint8_t x=0; x<=7; x++)
+    //      {
+    //        Serial.print(screen_memory[y][x]); // prints from top left, 
+    //      }
+    //    }
+    Serial.print("FREE RAM MIN/MAX: ");
+    Serial.print(FreeRAMMinimum);
+    Serial.print("/");
+    Serial.print(FreeRAMMaximum);
     Serial.println();
     SerialPacketUpdateLastRunTime = nowTime;
     #endif
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 void GetPhysicalCoreState() {
@@ -1237,23 +1350,63 @@ void GetPhysicalCoreState() {
   PhysicalCoreStartupPattern[2] = read_word_physical_row(2);
   PhysicalCoreStartupPattern[3] = read_word_physical_row(3);
 }
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////  SCROLL CORE MEMORY
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void ScrollCoreMemory() {
-unsigned int ScreenReadCol = 0;
-unsigned int ScreenWriteCol = 0;
-unsigned int StringPosition = 0;
-unsigned int CharacterColumn = 0;
-
-// Is it time to scroll again?
-  if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
-  {
-    ScrollUpdateLastRunTime = nowTime;
-// Shift Screen Content Left
-
-// Move in new character column by column
-
-// Out of characters?
-  }
+  // This function acts on the cores themselves, not on the LED array. 
+  // The LED array is updated from a seperate function, which reads the cores.
+  // The implication is that magnetic interference will affect the cores and propegate across the screen, showing how the cores are used as screen RAM.
+  static uint8_t ScreenReadCol = 0;
+  static uint8_t ScreenWriteCol = 0;
+  /* Skip this for now, just go through the array of text directly.
+   static char TextString[6]; // an array big enough for a 5 character string
+   TextString[0] = 'C'; // the string consists of 5 characters
+   TextString[1] = 'O';
+   TextString[2] = 'R';
+   TextString[3] = 'E';
+   TextString[4] = ' ';
+   TextString[5] = 0; // 6th array element is a null terminator
+  */
+  static uint8_t StringPosition = 0;
+  static uint8_t CharacterColumn = 0;
+  static uint8_t Nibble = 0;
+  static uint8_t NewNibble = 0b00001111;  
+  // Is it time to scroll again?
+    if ((nowTime - ScrollUpdateLastRunTime) >= ScrollUpdatePeriod)
+    {
+      ScrollUpdateLastRunTime = nowTime;
+      // Out of characters? Go back to the beginning and scroll again.
+        if ( StringPosition == 13 ) { StringPosition = 0; CharacterColumn = 0; }
+      // Shift All Screen Content Left One Column (leftmost column is 0, rightmost is 7)
+        for (uint8_t x=1; x<=7; x++)
+        {
+          Nibble = read_physical_col(x);        // Read Core Array Column x
+          write_physical_col( (x-1), Nibble);   // Then write it to Core Array Column x-1 which is one row to the left
+        }
+      // Move in new character column by column
+        // Read Character Column
+          NewNibble = 0;
+          if (CharacterColumn == 4) {CharacterColumn = 0; StringPosition++;}
+          for (uint8_t i=0; i<=3; i++) // iterate through the four rows
+          {
+            NewNibble <<= 1;
+            NewNibble |= pgm_read_byte(&(character_font[StringPosition][i][CharacterColumn]));
+            // Need to use program memory for constants because over 77% usage in UNO causes instability.
+            // https://forum.arduino.cc/index.php?topic=45681.0
+          }
+          CharacterColumn++; // prepare for next column
+        // Write Screen Column
+          NewNibble = ~NewNibble; // invert the incoming nibble, keeping in mind "1" is pixel off.  
+          write_physical_col( 7, NewNibble);      
+        // Test writing something
+        //  NewNibble = NewNibble<<1;
+        //  if(NewNibble > 0b00010000) {NewNibble = 0b00000001;}
+        //  write_physical_col( 7, NewNibble);  // test by shifting a new column, keeping in mind "1" is pixel off.
+        // 
+    }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 
 unsigned long Button1State(unsigned long clear_duration) // send a 1 or more to clear, 0 to use normally)
@@ -1565,6 +1718,8 @@ void SnakeGameLogic()
       OldSnakeLength = SnakeLength;
     }
     AreYouAWinner();
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////  SNAKE GAME STATE MACHINE LOGIC
@@ -1624,6 +1779,8 @@ void UpdateSnakeGame()
     }
     SnakeGameUpdateLastRunTime = nowTime;
   }
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////  MAIN LOOP
@@ -1641,8 +1798,8 @@ void loop(void)
       ReadCoresUpdateDisplay();
       CheckForSerialCommand();
       SendSerialPacketUpdate();
-      // ScrollCoreMemory();
-      TopLevelStateMachine = 1;
+      ScrollCoreMemory();
+      if(ButtonPressDuration_ms > 500) { TopLevelStateMachine = 1; }                                   //  Press to move to drawing state
       break;
     case 1:      // Default starting mode for simple drawing mode
       GameState = 0;
@@ -1662,7 +1819,7 @@ void loop(void)
       ReadCoresUpdateDisplay();
       CheckForSerialCommand();
       SendSerialPacketUpdate();
-      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); TopLevelStateMachine = 1; }      // WRITE BACK ARROW FAR RIGHT TO GO BACK TO DEFAULT MODE
+      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); TopLevelStateMachine = 0; }      // WRITE BACK ARROW FAR RIGHT TO GO BACK TO DEFAULT MODE
       break;
     case 3:      // Setup a game of snake
       // CorePhysicalStateChanged = CheckForCoreStateChange();   // Look for stylus touch [32 bit long physical screen position]. Moved into game logic because when two instances are active it doesn't work for some reason. Memory?
@@ -1677,7 +1834,7 @@ void loop(void)
       if(get_gesture()=="E") { TopLevelStateMachine = 0; }                                            // SWIPE LEFT ALONG BOTTOM ROW TO EXIT GAME
       #endif
       // WRITE BACK ARROW FAR RIGHT TO GO BACK TO DEFAULT MODE
-      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); GameState = 0; TopLevelStateMachine = 1; }
+      if (read_logical_word()==0x7F9F6FBF) { write_word(0xffffffff); GameState = 0; TopLevelStateMachine = 0; }
       if(ButtonPressDuration_ms > 50) { GameState = 0; }                                     // short press to restart game
       break;
     default:
@@ -1686,4 +1843,6 @@ void loop(void)
 
   EndLoopTime = millis(); 
   LoopTime = EndLoopTime - StartLoopTime;  
+  if (freeMemory() > FreeRAMMaximum) {FreeRAMMaximum = freeMemory();}
+  if (freeMemory() < FreeRAMMinimum) {FreeRAMMinimum = freeMemory();}
 }
