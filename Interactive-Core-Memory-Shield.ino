@@ -111,7 +111,7 @@ Duration of stylus over a core increase intensity of chosen color.
 #include <Adafruit_NeoPixel.h>
 #define PIN 14 // A0 or D14 are the same thing, different use modes
 #define NUM_LEDS 32
-#define BRIGHTNESS 15
+#define BRIGHTNESS 255
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRB + NEO_KHZ800);
 
 
@@ -162,7 +162,7 @@ const unsigned long SerialPacketUpdatePeriod = 50 ; // ms
 const unsigned long CoreChangeDetectUpdatePeriod = 30 ; // ms (effectively debounces the stylus movement)
 const unsigned long GestureTimeout = 3000 ; // ms
 const unsigned long SnakeGameUpdatePeriod = 100 ; // ms
-const unsigned long ScrollUpdatePeriod = 175; // ms
+const unsigned long ScrollUpdatePeriod = 120; // ms
 volatile unsigned long NeopixelUpdateLastRunTime;
 volatile unsigned long SerialPacketUpdateLastRunTime;
 volatile unsigned long CoreChangeDetectUpdateLastRunTime;
